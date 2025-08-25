@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Daily Alerts Dashboard</title>
+<style>
+  :root{
+    --bg:#f8fafc;--card:#fff;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--brand:#2563eb;--brand-ink:#fff;--warn:#ef4444;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;background:var(--bg);color:var(--ink)}
+  .container{max-width:1080px;margin:0 auto;padding:24px}
+  h1{margin:0 0 8px;font-size:28px}
+  .muted{color:var(--muted)}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  .btn{appearance:none;border:1px solid var(--line);background:#fff;color:var(--ink);padding:8px 12px;border-radius:12px;cursor:pointer}
+  .btn.primary{background:var(--brand);color:var(--brand-ink);border-color:var(--brand)}
+  .btn.ghost{border:none;background:transparent;color:var(--muted)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px}
+  .grid{display:grid;gap:12px}
+  .grid.cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .stat{padding:12px;border:1px solid var(--line);border-radius:12px;background:#fff;text-align:center}
+  .stat .n{font-size:22px;font-weight:700}
+  label{display:block;font-weight:600;margin-bottom:6px}
+  input[type=text],input[type=url],input[type=datetime-local],input[type=number],textarea,select{
+    width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink)
+  }
+  table{width:100%;border-collapse:collapse}
+  th,td{border-top:1px solid var(--line);padding:10px;vertical-align:top}
+  th{font-weight:600;text-align:left;color:var(--muted)}
+  .badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+  .badge{border:1px solid var(--line);border-radius:999px;padding:2px 8px;font-size:12px;color:var(--muted)}
+  .badge.red{border-color:#fecaca;color:#b91c1c;background:#fff5f5}
+  .actions .btn{padding:6px 10px}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap}
+  .toolbar .grow{flex:1}
+  .hidden{display:none}
+  .dim{opacity:.6}
+  .right{margin-left:auto}
+  dialog{border:none;border-radius:16px;padding:0}
+  dialog .card{border:none}
+  .help{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Daily Alerts Dashboard</h1>
+      <p class="muted">Track your 8 AM Watchlist, 12 PM AI, 3 PM Training, 5 PM Indian Example, and custom alerts. Data stays in your browser.</p>
+      <div class="row" style="margin-top:12px;margin-bottom:12px">
+        <button class="btn" id="btnAdd">＋ Add Alert</button>
+        <button class="btn" id="btnImport">⇪ Import JSON</button>
+        <button class="btn" id="btnExport">⇩ Export CSV</button>
+      </div>
+    </header>
+
+    <!-- Sync card -->
+    <section class="card" id="syncCard">
+      <h3 style="margin:0 0 12px;display:flex;align-items:center;gap:8px">🔄 Sync</h3>
+      <div class="grid" style="grid-template-columns:2fr 1fr 1fr auto;align-items:end;gap:12px">
+        <div>
+          <label for="syncUrl">Sync URL (JSON)</label>
+          <input id="syncUrl" type="url" placeholder="https://gist.githubusercontent.com/…/raw/alerts.json">
+          <div class="help">Public endpoint returning an array or <code>{"alerts": [...]}</code>. Tip: use a public GitHub Gist.</div>
+        </div>
+        <div>
+          <label for="syncInterval">Every (minutes)</label>
+          <input id="syncInterval" type="number" min="1" step="1" value="15">
+          <div class="help">Auto-sync interval</div>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <div class="row" style="align-items:center">
+            <input type="checkbox" id="autoSync">
+            <label for="autoSync" style="margin:0">Auto-sync</label>
+          </div>
+          <div class="help" id="lastSyncHelp">Last sync: never</div>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button class="btn" id="btnSyncNow">Sync now</button>
+        </div>
+      </div>
+      <div class="help" id="syncMsg" style="margin-top:6px"></div>
+    </section>
+
+    <!-- Stats -->
+    <section class="grid cols-4" style="margin-top:12px;margin-bottom:12px">
+      <div class="stat"><div class="muted">Open</div><div class="n" id="statOpen">0</div></div>
+      <div class="stat"><div class="muted">Unread</div><div class="n" id="statUnread">0</div></div>
+      <div class="stat"><div class="muted">Snoozed</div><div class="n" id="statSnoozed">0</div></div>
+      <div class="stat"><div class="muted">Total</div><div class="n" id="statTotal">0</div></div>
+    </section>
+
+    <!-- Filters -->
+    <section class="card">
+      <div class="toolbar">
+        <input class="grow" type="text" id="q" placeholder="Search title, notes, source, tags…">
+        <select id="category">
+          <option value="all">All categories</option>
+          <option value="8am">8:00 • Watchlist News</option>
+          <option value="12pm">12:00 • AI Digest</option>
+          <option value="3pm">3:00 • Valuation Training</option>
+          <option value="5pm">5:00 • Indian Example</option>
+          <option value="other">Other</option>
+        </select>
+        <label class="row" style="align-items:center"><input type="checkbox" id="onlyOpen" checked> Show open only</label>
+      </div>
+    </section>
+
+    <!-- Table -->
+    <section class="card" style="margin-top:12px">
+      <div class="help" style="margin-bottom:8px">Click a title to open. Use the action buttons to mark, snooze, or complete.</div>
+      <table id="tbl">
+        <thead>
+          <tr>
+            <th style="width:170px">Time</th>
+            <th>Title</th>
+            <th style="width:160px">Source</th>
+            <th style="width:220px">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </section>
+  </div>
+
+  <!-- Add/Edit dialog -->
+  <dialog id="dlgEdit">
+    <form method="dialog" class="card" style="min-width: min(620px, 95vw);">
+      <h3 style="margin-top:0">Add alert</h3>
+      <div class="grid" style="grid-template-columns:1fr;gap:10px">
+        <div><label>Title *</label><input id="f_title" type="text" required/></div>
+        <div><label>Link</label><input id="f_link" type="url" placeholder="https://…"/></div>
+        <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px">
+          <div>
+            <label>Category</label>
+            <select id="f_category">
+              <option value="8am">8:00 • Watchlist News</option>
+              <option value="12pm">12:00 • AI Digest</option>
+              <option value="3pm">3:00 • Valuation Training</option>
+              <option value="5pm">5:00 • Indian Example</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label>When</label>
+            <input id="f_time" type="datetime-local"/>
+          </div>
+        </div>
+        <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px">
+          <div>
+            <label>Status</label>
+            <select id="f_status">
+              <option value="new">new</option>
+              <option value="read">read</option>
+              <option value="snoozed">snoozed</option>
+              <option value="done">done</option>
+            </select>
+          </div>
+          <div>
+            <label>Priority</label>
+            <select id="f_priority">
+              <option value="high">high</option>
+              <option value="med" selected>med</option>
+              <option value="low">low</option>
+            </select>
+          </div>
+        </div>
+        <div><label>Source</label><input id="f_source" type="text" placeholder="Daily Watchlist Digest"/></div>
+        <div><label>Tags (comma separated)</label><input id="f_tags" type="text" placeholder="earnings, aviation"/></div>
+        <div><label>Notes</label><input id="f_notes" type="text"/></div>
+      </div>
+      <div class="row" style="justify-content:flex-end;margin-top:12px">
+        <button class="btn" value="cancel">Cancel</button>
+        <button class="btn primary" id="btnSaveAlert" value="default">Save alert</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Import dialog -->
+  <dialog id="dlgImport">
+    <form method="dialog" class="card" style="min-width:min(620px,95vw)">
+      <h3 style="margin-top:0">Import alerts (JSON)</h3>
+      <p class="help">Paste an array or an object like <code>{"alerts":[...]}</code>.</p>
+      <textarea id="importText" rows="12" placeholder='[
+  {"title":"Example","time":"2025-08-25T08:00:00+05:30","category":"8am","priority":"high","status":"new","source":"Watchlist","tags":["earnings"],"notes":"Check guidance"}
+]'></textarea>
+      <div class="row" style="justify-content:flex-end;margin-top:12px">
+        <button class="btn" value="cancel">Cancel</button>
+        <button class="btn primary" id="btnDoImport" value="default">Import</button>
+      </div>
+    </form>
+  </dialog>
+
+<script>
+(function(){
+  const STORAGE_KEY = 'alerts_dashboard_v1';
+  const SYNC_URL_KEY = 'alerts_sync_url';
+  const AUTO_KEY = 'alerts_auto_sync';
+  const INTERVAL_KEY = 'alerts_sync_interval';
+  const LAST_KEY = 'alerts_last_sync';
+
+  const CATS = {
+    '8am':'8:00 • Watchlist News', '12pm':'12:00 • AI Digest','3pm':'3:00 • Valuation Training','5pm':'5:00 • Indian Example','other':'Other'
+  };
+
+  // --- State ---
+  let state = loadInitial();
+
+  // --- Elements ---
+  const elRows = document.getElementById('rows');
+  const elQ = document.getElementById('q');
+  const elCat = document.getElementById('category');
+  const elOnlyOpen = document.getElementById('onlyOpen');
+
+  const statOpen = document.getElementById('statOpen');
+  const statUnread = document.getElementById('statUnread');
+  const statSnoozed = document.getElementById('statSnoozed');
+  const statTotal = document.getElementById('statTotal');
+
+  const syncUrl = document.getElementById('syncUrl');
+  const syncInterval = document.getElementById('syncInterval');
+  const autoSync = document.getElementById('autoSync');
+  const btnSyncNow = document.getElementById('btnSyncNow');
+  const lastHelp = document.getElementById('lastSyncHelp');
+  const syncMsg = document.getElementById('syncMsg');
+
+  // dialogs
+  const dlgEdit = document.getElementById('dlgEdit');
+  const dlgImport = document.getElementById('dlgImport');
+
+  // form fields
+  const f = {
+    title: document.getElementById('f_title'),
+    link: document.getElementById('f_link'),
+    category: document.getElementById('f_category'),
+    time: document.getElementById('f_time'),
+    status: document.getElementById('f_status'),
+    priority: document.getElementById('f_priority'),
+    source: document.getElementById('f_source'),
+    tags: document.getElementById('f_tags'),
+    notes: document.getElementById('f_notes')
+  };
+
+  // --- Init sync settings ---
+  syncUrl.value = localStorage.getItem(SYNC_URL_KEY) || '';
+  autoSync.checked = localStorage.getItem(AUTO_KEY) === 'true';
+  syncInterval.value = Number(localStorage.getItem(INTERVAL_KEY)) || 15;
+  updateLastSync();
+
+  // --- Render
+  function render(){
+    saveState();
+    const q = (elQ.value||'').toLowerCase();
+    const cat = elCat.value;
+    const onlyOpen = elOnlyOpen.checked;
+
+    const filtered = state.alerts
+      .filter(a => cat==='all' ? true : a.category===cat)
+      .filter(a => !q ? true : [a.title, a.source, a.notes, (a.tags||[]).join(' ')].join(' ').toLowerCase().includes(q))
+      .filter(a => onlyOpen ? a.status !== 'done' : true)
+      .sort((a,b)=> new Date(b.time) - new Date(a.time));
+
+    // stats
+    statTotal.textContent = state.alerts.length;
+    statOpen.textContent = state.alerts.filter(a=>a.status!=='done').length;
+    statUnread.textContent = state.alerts.filter(a=>a.status==='new').length;
+    statSnoozed.textContent = state.alerts.filter(a=>a.status==='snoozed').length;
+
+    // table rows
+    elRows.innerHTML = '';
+    if(filtered.length===0){
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 4; td.className='muted'; td.textContent='No alerts found.'; tr.appendChild(td); elRows.appendChild(tr);
+      return;
+    }
+    for(const a of filtered){
+      const tr = document.createElement('tr');
+      if(a.status==='done') tr.classList.add('dim');
+      const tdTime = document.createElement('td');
+      tdTime.innerHTML = `<div>${new Date(a.time).toLocaleString()}</div>
+        <div class="badges">
+          <span class="badge">${CATS[a.category]||a.category}</span>
+          <span class="badge ${a.priority==='high'?'red':''}">${a.priority||''}</span>
+          <span class="badge">${a.status||''}</span>
+        </div>`;
+
+      const tdTitle = document.createElement('td');
+      const aEl = document.createElement('a'); aEl.textContent = a.title; aEl.href = toAbsolute(a.link||''); aEl.target = '_blank'; aEl.rel = 'noopener noreferrer'; if(!aEl.href){ aEl.removeAttribute('href'); aEl.style.pointerEvents='none'; aEl.style.textDecoration='none'; aEl.style.color='inherit'; }
+      tdTitle.appendChild(aEl);
+      if(a.notes){ const p=document.createElement('div'); p.className='help'; p.textContent=a.notes; tdTitle.appendChild(p); }
+
+      const tdSource = document.createElement('td'); tdSource.textContent = a.source||'—';
+
+      const tdActions = document.createElement('td'); tdActions.className='actions';
+      tdActions.appendChild(makeBtn('Mark read', ()=> setStatus(a.id,'read')));
+      tdActions.appendChild(makeBtn('Snooze', ()=> setStatus(a.id,'snoozed')));
+      tdActions.appendChild(makeBtn('Toggle done', ()=> toggleDone(a.id)));
+      const del = makeBtn('Delete', ()=> removeAlert(a.id)); del.style.color='var(--warn)'; tdActions.appendChild(del);
+
+      tr.appendChild(tdTime); tr.appendChild(tdTitle); tr.appendChild(tdSource); tr.appendChild(tdActions);
+      elRows.appendChild(tr);
+    }
+  }
+
+  function toAbsolute(url){
+    if(!url) return '';
+    const u = url.trim();
+    if(u.startsWith('http://') || u.startsWith('https://')) return u;
+    if(u.startsWith('//')) return 'https:'+u;
+    if(u.startsWith('www.')) return 'https://'+u;
+    try{ const parsed = new URL(u, window.location.href); return parsed.href; }catch{ return ''; }
+  }
+
+  function makeBtn(label, cb){ const b=document.createElement('button'); b.className='btn'; b.textContent=label; b.addEventListener('click', cb); return b; }
+
+  // --- CRUD helpers ---
+  function addAlert(a){ state.alerts.unshift(a); render(); }
+  function setStatus(id, status){ state.alerts = state.alerts.map(x=> x.id===id?{...x, status}:x); render(); }
+  function toggleDone(id){ state.alerts = state.alerts.map(x=> x.id===id?{...x, status: x.status==='done'?'read':'done'}:x); render(); }
+  function removeAlert(id){ state.alerts = state.alerts.filter(x=> x.id!==id); render(); }
+
+  // --- Persistence ---
+  function loadInitial(){
+    try{ const raw = localStorage.getItem(STORAGE_KEY); if(raw) return JSON.parse(raw);}catch{}
+    const today = new Date().toISOString().slice(0,10);
+    return {alerts:[
+      {id:cryptoRandom(), title:'IndiGo Q1 FY26 results: PAT ₹2,176 cr; revenue +5%', link:'', category:'8am', source:'Daily Watchlist Digest', time:`${today}T08:00:00+05:30`, status:'new', priority:'med', notes:'Track yields & forex commentary', tags:['earnings','aviation']},
+      {id:cryptoRandom(), title:'AI: Tabular LLM technique (blog)', link:'', category:'12pm', source:'AI Noon Digest', time:`${today}T12:00:00+05:30`, status:'new', priority:'low', notes:'Skim for procurement analytics idea', tags:['LLM','tabular']},
+      {id:cryptoRandom(), title:'Concept: Residual Income; Metric: EV/EBITDA', link:'', category:'3pm', source:'Valuation Training', time:`${today}T15:00:00+05:30`, status:'read', priority:'med', notes:'Recreate example in Excel', tags:['valuation','metric']},
+      {id:cryptoRandom(), title:'Apply RI + EV/EBITDA to Infosys (worked example)', link:'', category:'5pm', source:'Indian Example', time:`${today}T17:00:00+05:30`, status:'new', priority:'high', notes:'Check per-share bridge & cash netting', tags:['case','IT']}
+    ]};
+  }
+  function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+  function cryptoRandom(){ if(window.crypto?.randomUUID) return crypto.randomUUID(); return 'id-'+Math.random().toString(36).slice(2); }
+
+  // --- Import/Export ---
+  function exportCSV(){
+    const header=['time','category','title','source','priority','status','tags','link','notes'];
+    const rows=state.alerts.map(a=>[
+      a.time,
+      a.category,
+      '"'+(a.title||'').replace(/"/g,'""')+'"',
+      '"'+(a.source||'').replace(/"/g,'""')+'"',
+      a.priority||'',
+      a.status||'',
+      '"'+(a.tags||[]).join(';').replace(/"/g,'""')+'"',
+      a.link||'',
+      '"'+(a.notes||'').replace(/"/g,'""')+'"'
+    ].join(','));
+    const csv=[header.join(','),...rows].join('\n');
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='alerts_'+new Date().toISOString().slice(0,10)+'.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  }
+
+  function normalizeAlerts(list){
+    return list.map(a=>({
+      id: a.id || keyFrom(a),
+      title: a.title || 'Untitled',
+      link: a.link || '',
+      category: ['8am','12pm','3pm','5pm','other'].includes(a.category)?a.category:'other',
+      source: a.source || 'Imported',
+      time: a.time || new Date().toISOString(),
+      status: ['new','read','snoozed','done'].includes(a.status)?a.status:'new',
+      priority: ['high','med','low'].includes(a.priority)?a.priority:'med',
+      notes: a.notes || '',
+      tags: Array.isArray(a.tags)?a.tags:[]
+    }));
+  }
+  function keyFrom(a){ return [a.title,a.time,a.category].join('|'); }
+  function mergeAlerts(incoming, existing){
+    const map=new Map(existing.map(x=>[x.id,x]));
+    for(const a of incoming){ if(!map.has(a.id)) map.set(a.id,a); }
+    return Array.from(map.values()).sort((a,b)=> new Date(b.time)-new Date(a.time));
+  }
+
+  async function fetchFromSync(){
+    const url = syncUrl.value.trim(); if(!url) return;
+    try{
+      btnSyncNow.disabled = true; syncMsg.textContent='';
+      const res = await fetch(url, {headers:{'cache-control':'no-cache'}});
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const data = await res.json();
+      const list = Array.isArray(data)?data : data.alerts;
+      if(!Array.isArray(list)) throw new Error('JSON must be an array or {alerts:[...]}');
+      const normalized = normalizeAlerts(list);
+      state.alerts = mergeAlerts(normalized, state.alerts);
+      localStorage.setItem(SYNC_URL_KEY, url);
+      const ts = new Date().toISOString(); localStorage.setItem(LAST_KEY, ts); updateLastSync();
+      syncMsg.textContent = 'Synced '+normalized.length+' item(s)';
+      render();
+    }catch(e){ syncMsg.textContent = 'Sync failed: '+(e?.message||e); }
+    finally{ btnSyncNow.disabled = false; }
+  }
+
+  function updateLastSync(){
+    const v = localStorage.getItem(LAST_KEY); lastHelp.textContent = 'Last sync: '+(v? new Date(v).toLocaleString() : 'never');
+  }
+
+  // Auto timer
+  let timer=null; function resetTimer(){ if(timer) clearInterval(timer); if(!autoSync.checked||!syncUrl.value.trim()) return; const ms=Math.max(1, Number(syncInterval.value)||15)*60*1000; timer=setInterval(fetchFromSync, ms); }
+
+  // --- Wire UI ---
+  document.getElementById('btnAdd').addEventListener('click',()=>{
+    f.title.value=''; f.link.value=''; f.category.value='8am'; f.time.value=new Date().toISOString().slice(0,16); f.status.value='new'; f.priority.value='med'; f.source.value=''; f.tags.value=''; f.notes.value='';
+    dlgEdit.showModal();
+  });
+  document.getElementById('btnSaveAlert').addEventListener('click',(e)=>{
+    e.preventDefault();
+    const a={
+      id: cryptoRandom(),
+      title: f.title.value.trim()||'Untitled alert',
+      link: f.link.value.trim(),
+      category: f.category.value,
+      time: new Date(f.time.value).toISOString(),
+      status: f.status.value,
+      priority: f.priority.value,
+      source: f.source.value.trim(),
+      notes: f.notes.value.trim(),
+      tags: f.tags.value.split(',').map(t=>t.trim()).filter(Boolean)
+    };
+    addAlert(a); dlgEdit.close();
+  });
+  document.getElementById('btnImport').addEventListener('click',()=>{ document.getElementById('importText').value=''; dlgImport.showModal(); });
+  document.getElementById('btnDoImport').addEventListener('click',(e)=>{
+    e.preventDefault();
+    try{ const parsed = JSON.parse(document.getElementById('importText').value);
+      const list = Array.isArray(parsed)?parsed:parsed.alerts; if(!Array.isArray(list)) throw new Error('Invalid format');
+      const normalized = normalizeAlerts(list); state.alerts = mergeAlerts(normalized, state.alerts); render(); dlgImport.close();
+    }catch(err){ alert('Import failed: '+(err?.message||err)); }
+  });
+  document.getElementById('btnExport').addEventListener('click', exportCSV);
+
+  btnSyncNow.addEventListener('click', fetchFromSync);
+  autoSync.addEventListener('change', ()=>{ localStorage.setItem(AUTO_KEY, autoSync.checked); resetTimer(); });
+  syncUrl.addEventListener('change', ()=>{ localStorage.setItem(SYNC_URL_KEY, syncUrl.value.trim()); resetTimer(); });
+  syncInterval.addEventListener('change', ()=>{ localStorage.setItem(INTERVAL_KEY, syncInterval.value); resetTimer(); });
+
+  elQ.addEventListener('input', render); elCat.addEventListener('change', render); elOnlyOpen.addEventListener('change', render);
+
+  // First paint
+  render();
+  if(autoSync.checked && syncUrl.value.trim()) { fetchFromSync(); resetTimer(); }
+})();
+</script>
+</body>
+</html>
